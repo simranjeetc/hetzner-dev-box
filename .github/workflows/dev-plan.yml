@@ -1,0 +1,35 @@
+name: dev-plan
+
+# Tablet-triggered: READ-ONLY safety preview (terraform plan). No apply/destroy.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: dev-box-terraform
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  dev-plan:
+    name: Dev Box Plan (safety preview)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan (read-only)
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform plan -input=false -no-color
