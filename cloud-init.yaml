@@ -353,6 +353,16 @@ write_files:
       migrate_or_link "$HOME/.config/herdr"            "/data/herdr-config"
       migrate_or_link "$HOME/.config/code-server"      "/data/code-server/config"
       migrate_or_link "$HOME/.local/share/code-server" "/data/code-server/share"
+      # opencode CONFIG persistence (mirrors the herdr pattern). Ordering is
+      # critical and satisfied here: dotfiles/setup.sh has ALREADY run above
+      # (step 4, "bash $HOME/dotfiles/setup.sh"), so on first boot it has copied
+      # the committed opencode config into ~/.config/opencode; migrate_or_link
+      # now moves that onto /data/opencode-config and symlinks it back. On every
+      # subsequent rebuild /data already holds the live config (incl. any on-box
+      # edits), so the user's opencode state survives. NOTE: the opencode BINARY
+      # (installed via curl opencode.ai/install above) stays ephemeral/self-
+      # updating on the OS disk — only the CONFIG needs to live on /data.
+      migrate_or_link "$HOME/.config/opencode"         "/data/opencode-config"
       chmod 700 /data/herdr-config
       chmod 600 /data/code-server/config/config.yaml 2>/dev/null || true
       for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do

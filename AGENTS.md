@@ -60,3 +60,36 @@ Provisioned via Terraform + cloud-init. Controlled from a tablet via GitHub Acti
 - Do NOT run `terraform apply` / `destroy` without explicit human go-ahead.
 - Do NOT commit secrets — check `git status` before every push.
 - The live box is stateful; treat `/data` and the volume as sacred (delete-protected).
+
+---
+
+## Storage layout & install intent (for agents operating ON the box)
+
+**`/data` is the ONLY persistent volume** — it survives every `dev-down` / `dev-up`
+rebuild. The **OS disk is EPHEMERAL** and is wiped on every rebuild.
+
+**Tool binaries live on the OS disk on purpose and self-reinstall each rebuild**
+(opencode, herdr, code-server, nvim, node/nvm, uv, ripgrep, fzf, lazygit, etc.).
+Only these are version-pinned in `cloud-init.yaml`: **Go 1.23.4**, **Java 21.0.5-tem**,
+**nvm v0.40.1**. Everything else tracks latest.
+
+### What persists (on `/data`, symlinked from `$HOME`)
+
+| Item | Path |
+|------|------|
+| gh auth token | `/data/gh-config` (via `GH_CONFIG_DIR`) |
+| GitHub SSH key | `/data/ssh/id_ed25519_github` |
+| herdr config | `~/.config/herdr` → `/data/herdr-config` |
+| code-server config | `~/.config/code-server` → `/data/code-server/config` |
+| code-server share | `~/.local/share/code-server` → `/data/code-server/share` |
+| opencode config | `~/.config/opencode` → `/data/opencode-config` |
+| repos + uncommitted work | put them under a `/data`-backed path |
+
+### Install guidance for agents
+
+- Anything whose **DATA must survive a rebuild belongs on `/data`**: clone repos
+  under a `/data`-backed path, and put any persistent state there.
+- Do NOT rely on `~/` or `/var/lib` (outside `/data`) for durable data — it is wiped.
+- **Docker images/containers/volumes do NOT persist** — the data-root is the default
+  `/var/lib/docker` on the ephemeral disk. Treat containers as disposable, rebuild
+  from Dockerfiles, and keep durable data on `/data`.
