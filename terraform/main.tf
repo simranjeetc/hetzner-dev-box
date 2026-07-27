@@ -92,6 +92,12 @@ resource "hcloud_server" "dev" {
   ssh_keys     = [for k in hcloud_ssh_key.keys : k.name]
   firewall_ids = [hcloud_firewall.dev_fw.id]
 
+  # Attach the reserved Primary IPv4 so the public IP is stable across rebuilds.
+  public_net {
+    ipv4_enabled = true
+    ipv4         = hcloud_primary_ip.dev.id
+  }
+
   # cloud-init: installs full toolchain on first boot
   user_data = file("${path.module}/../cloud-init.yaml")
 
@@ -129,6 +135,27 @@ resource "hcloud_volume" "data" {
   }
 }
 
+# Reserved Primary IPv4: owned independently of the server so the box's
+# public IP is STABLE across dev-down/dev-up rebuilds. auto_delete = false
+# keeps the IP alive when the server is destroyed on dev-down.
+resource "hcloud_primary_ip" "dev" {
+  name        = "personal-dev-ip"
+  type        = "ipv4"
+  location    = var.location # Singapore ("sin"); provider now uses location, not datacenter
+  auto_delete = false        # CRUCIAL: do NOT release the IP when the server is destroyed on dev-down
+
+  delete_protection = true # API-side guard (same pattern as the volume)
+
+  labels = {
+    purpose = "personal-dev"
+    managed = "terraform"
+  }
+
+  lifecycle {
+    prevent_destroy = true # terraform-side guard (same pattern as the volume)
+  }
+}
+
 # Attach the volume to the running server WITHOUT recreating it.
 # automount = false: we mount manually to control the mount point (/data).
 resource "hcloud_volume_attachment" "data" {
@@ -138,7 +165,7 @@ resource "hcloud_volume_attachment" "data" {
 }
 
 output "server_ip" {
-  value = hcloud_server.dev.ipv4_address
+  value = hcloud_primary_ip.dev.ip_address
 }
 
 output "data_volume_id" {
@@ -150,5 +177,5 @@ output "data_volume_device" {
 }
 
 output "ssh_command" {
-  value = "ssh dev@${hcloud_server.dev.ipv4_address}"
+  value = "ssh dev@${hcloud_primary_ip.dev.ip_address}"
 }
