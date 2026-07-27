@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in. NEVER commit the real tfvars (it has your token).
+#
+# Get API token: Hetzner Console > your project > Security > API Tokens > Generate (Read & Write)
+
+hcloud_token = "PASTE_YOUR_HETZNER_API_TOKEN_HERE"
+
+server_name = "personal-dev"
+server_type = "cx32"   # 8GB/4vCPU. Use "cx42" for 16GB heavy builds.
+location    = "sin"    # Singapore (closest to Bengaluru)
+
+# Each device = its own keypair. Paste the PUBLIC keys here.
+# Private keys never leave their device.
+ssh_public_keys = {
+  worklaptop = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGWDov6ZN3qEfp4AABqepGpCz3CwU3xRTdvJ7IP5HzkW hetzner-worklaptop-20260727"
+  # tablet   = "PASTE_TABLET_PUBLIC_KEY_FROM_TERMIUS"
+  # newlaptop = "ADD_LATER"
+}

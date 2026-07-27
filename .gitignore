@@ -1,0 +1,34 @@
+# === Secrets — NEVER commit ===
+.hetzner-api-token
+*.hetzner-api-token
+*.pem
+*_private*
+id_ed25519
+id_rsa
+*.key
+
+# === Terraform state (lives in HCP Terraform, never local-committed) ===
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+
+# Provider plugin cache dir — ignore. (Lock file IS committed, see below.)
+**/.terraform/*
+.terraform/
+
+# Terraform overrides / CLI config
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# === Explicitly COMMITTED (negations) ===
+# terraform.tfvars holds only PUBLIC ssh keys + server config, NO secrets.
+!terraform.tfvars
+!terraform.tfvars.example
+# Lock file must be committed for reproducible provider versions.
+!.terraform.lock.hcl
