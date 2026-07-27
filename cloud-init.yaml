@@ -227,8 +227,13 @@ write_files:
       # manually (`systemctl --user start code-server`) so it consumes no RAM
       # by default. Strong random password on first install only (idempotent).
       command -v code-server >/dev/null 2>&1 || curl -fsSL https://code-server.dev/install.sh | sh
+      # Password-preservation guard across rebuilds: if the persistent /data copy
+      # already has a config.yaml (with its password), that wins — do NOT generate
+      # a fresh random password. Only generate when NEITHER the home config NOR the
+      # /data config exists (true first boot). The migrate-or-link block further
+      # below then symlinks ~/.config/code-server -> /data/code-server/config.
       mkdir -p "$HOME/.config/code-server"
-      if [ ! -f "$HOME/.config/code-server/config.yaml" ]; then
+      if [ ! -f "$HOME/.config/code-server/config.yaml" ] && [ ! -f /data/code-server/config/config.yaml ]; then
         CSPW="$(openssl rand -base64 24 | tr -d /+= | cut -c1-32)"
         cat > "$HOME/.config/code-server/config.yaml" <<CSEOF
       bind-addr: 0.0.0.0:8443
@@ -256,7 +261,38 @@ write_files:
       CSEOF
       systemctl --user daemon-reload 2>/dev/null || true
 
-      # PATH for all tools in both shells
+      # --- Persist herdr + code-server state onto /data (symlink pattern) ---
+      # These dirs must survive `terraform destroy` (only /data persists). We
+      # migrate any real home dir onto /data (first boot) then replace it with a
+      # symlink; on rebuild /data already has the content so we just symlink.
+      # Idempotent + non-destructive: if BOTH home and /data have real content,
+      # the /data copy wins (source of truth) and home is backed up, never lost.
+      #   ~/.config/herdr            -> /data/herdr-config
+      #   ~/.config/code-server      -> /data/code-server/config
+      #   ~/.local/share/code-server -> /data/code-server/share
+      # code-server is NOT running at this point (unit created, not started), so
+      # it is safe to move its dirs.
+      migrate_or_link() {
+        SRC="$1"; DST="$2"; TS="$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$(dirname "$SRC")" "$(dirname "$DST")"
+        if [ -L "$SRC" ]; then
+          [ "$(readlink "$SRC")" = "$DST" ] && return 0
+          rm -f "$SRC"
+        fi
+        if [ -d "$SRC" ] && [ ! -L "$SRC" ]; then
+          if [ ! -e "$DST" ] || [ -z "$(ls -A "$DST" 2>/dev/null)" ]; then
+            mkdir -p "$DST"; rsync -a "$SRC"/ "$DST"/; rm -rf "$SRC"
+          else
+            mv "$SRC" "$SRC.bak-$TS"
+          fi
+        fi
+        ln -s "$DST" "$SRC"
+      }
+      migrate_or_link "$HOME/.config/herdr"            "/data/herdr-config"
+      migrate_or_link "$HOME/.config/code-server"      "/data/code-server/config"
+      migrate_or_link "$HOME/.local/share/code-server" "/data/code-server/share"
+      chmod 700 /data/herdr-config
+      chmod 600 /data/code-server/config/config.yaml 2>/dev/null || true
       for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
         grep -q ".opencode/bin" "$RC" 2>/dev/null || \
           echo 'export PATH=$PATH:$HOME/.opencode/bin:$HOME/.local/bin:/usr/local/go/bin:$HOME/go/bin' >> "$RC"
