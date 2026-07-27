@@ -251,7 +251,12 @@ write_files:
       # `2>/dev/null || echo 1.18.6` fallback pins the last-known-good default;
       # the migrate_or_link block below then seeds the file for next time.
       OPENCODE_VERSION="$(cat /data/opencode-config/OPENCODE_VERSION 2>/dev/null || echo 1.18.6)"
-      VERSION="$OPENCODE_VERSION" curl -fsSL https://opencode.ai/install | bash
+       # Pass the version as a --version FLAG to the installer. A prefix like
+       # `VERSION=X curl ... | bash` only sets VERSION for curl, NOT the
+       # downstream bash that runs the installer, so the pin was a no-op and
+       # latest got installed. The install script parses -v/--version (and
+       # $VERSION env); the flag is unambiguous, so we use it.
+       curl -fsSL https://opencode.ai/install | bash -s -- --version "$OPENCODE_VERSION"
 
       # herdr (terminal workspace manager for AI agents) — single static
       # binary to ~/.local/bin/herdr, no root. State/config lives ENTIRELY
