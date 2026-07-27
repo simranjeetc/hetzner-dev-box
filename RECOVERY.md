@@ -97,6 +97,31 @@ All control is via **GitHub → Actions tab**.
 - Re-set **`HCLOUD_TOKEN`** and/or **`TF_API_TOKEN`**.
 - **Requires the Tier-3 token copies** (you cannot read the old ones back).
 
+### opencode version pinning / deliberate upgrade
+The installed opencode version is **pinned**, not `latest`. cloud-init reads the
+pin from `/data/opencode-config/OPENCODE_VERSION` (default **`1.18.6`**) and
+installs exactly that on every rebuild, so the tool never drifts against the
+persistent config on `/data`.
+
+**Deliberate (staged/canary) upgrade — box is up on pinned `X`:**
+1. Back up config: `git -C ~/.config/opencode commit -am "pre-upgrade backup"`
+   (or otherwise snapshot `/data/opencode-config`).
+2. Upgrade in place to the candidate `Y`:
+   ```bash
+   VERSION=<Y> curl -fsSL https://opencode.ai/install | bash
+   ```
+3. Smoke-test: `opencode --version`; open a session; confirm skills load and the
+   `handoff-on-context` plugin loads without error.
+4. **ONLY THEN** bump the pin so rebuilds match:
+   ```bash
+   echo "<Y>" > /data/opencode-config/OPENCODE_VERSION
+   ```
+
+**Break-glass — reinstall last-known-good if opencode is broken:**
+```bash
+VERSION=1.18.6 curl -fsSL https://opencode.ai/install | bash
+```
+
 ### Worst case — `/data` volume lost
 Full rebuild from scratch:
 1. Provision a fresh `/data` (cloud-init formats + mounts a new volume).

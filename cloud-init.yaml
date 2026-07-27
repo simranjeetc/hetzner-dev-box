@@ -245,8 +245,13 @@ write_files:
       # Python via uv (fast, modern)
       curl -LsSf https://astral.sh/uv/install.sh | sh
 
-      # opencode
-      curl -fsSL https://opencode.ai/install | bash
+      # opencode (pinned; upgrades are a deliberate, separate action — see RECOVERY.md)
+      # Version is read from the persistent /data version file so rebuilds are
+      # deterministic. On a truly-fresh /data the file is absent, so the
+      # `2>/dev/null || echo 1.18.6` fallback pins the last-known-good default;
+      # the migrate_or_link block below then seeds the file for next time.
+      OPENCODE_VERSION="$(cat /data/opencode-config/OPENCODE_VERSION 2>/dev/null || echo 1.18.6)"
+      VERSION="$OPENCODE_VERSION" curl -fsSL https://opencode.ai/install | bash
 
       # herdr (terminal workspace manager for AI agents) — single static
       # binary to ~/.local/bin/herdr, no root. State/config lives ENTIRELY
@@ -363,6 +368,14 @@ write_files:
       # (installed via curl opencode.ai/install above) stays ephemeral/self-
       # updating on the OS disk — only the CONFIG needs to live on /data.
       migrate_or_link "$HOME/.config/opencode"         "/data/opencode-config"
+      # Seed the opencode version pin on /data (idempotent). On a truly-fresh
+      # /data this writes the last-known-good default so future rebuilds read a
+      # deterministic pin at install time (line ~254). NEVER clobber an existing
+      # pin: the user bumps it deliberately after a smoke-tested upgrade (see
+      # RECOVERY.md). /data/opencode-config exists here (migrate_or_link created
+      # or symlinked it above).
+      mkdir -p /data/opencode-config
+      [ -f /data/opencode-config/OPENCODE_VERSION ] || echo "1.18.6" > /data/opencode-config/OPENCODE_VERSION
       chmod 700 /data/herdr-config
       chmod 600 /data/code-server/config/config.yaml 2>/dev/null || true
       for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
