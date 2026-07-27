@@ -101,6 +101,47 @@ write_files:
       rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
       echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> /home/dev/.bashrc
 
+      # --- Editor stack (terminal dev tooling, root install to /usr/local/bin + /opt) ---
+      # nvim>=0.10, lazygit, fzf, ripgrep, fd, zoxide, eza, bat. Idempotent.
+      # tmux is already installed via the packages: list above (not duplicated here).
+      # Binaries land on /usr/local/bin (already on PATH). No dotfiles/plugins here.
+      apt-get install -y ripgrep fd-find bat
+      # Ubuntu ships fdfind/batcat; expose canonical names on PATH.
+      ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+      ln -sf "$(command -v batcat)" /usr/local/bin/bat
+
+      # Neovim (official tarball -> /opt/nvim, symlinked; apt's is too old).
+      NVIM_TGZ="nvim-linux-x86_64.tar.gz"
+      curl -fsSL "https://github.com/neovim/neovim/releases/latest/download/${NVIM_TGZ}" -o /tmp/nvim.tgz \
+        || curl -fsSL "https://github.com/neovim/neovim/releases/download/v0.10.4/${NVIM_TGZ}" -o /tmp/nvim.tgz
+      rm -rf /opt/nvim && mkdir -p /opt/nvim
+      tar -C /opt/nvim --strip-components=1 -xzf /tmp/nvim.tgz
+      ln -sf /opt/nvim/bin/nvim /usr/local/bin/nvim
+
+      # lazygit (GitHub release binary; pinned fallback if API detection flaky).
+      LAZYGIT_VER="$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest | grep -oP '"tag_name": *"v\K[0-9.]+' | head -1)"
+      LAZYGIT_VER="${LAZYGIT_VER:-0.44.1}"
+      curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VER}/lazygit_${LAZYGIT_VER}_Linux_x86_64.tar.gz" -o /tmp/lazygit.tgz
+      tar -C /tmp -xzf /tmp/lazygit.tgz lazygit
+      install -m 0755 /tmp/lazygit /usr/local/bin/lazygit
+
+      # fzf (GitHub release binary; pinned fallback).
+      FZF_VER="$(curl -fsSL https://api.github.com/repos/junegunn/fzf/releases/latest | grep -oP '"tag_name": *"v\K[0-9.]+' | head -1)"
+      FZF_VER="${FZF_VER:-0.56.3}"
+      curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VER}/fzf-${FZF_VER}-linux_amd64.tar.gz" -o /tmp/fzf.tgz
+      tar -C /tmp -xzf /tmp/fzf.tgz fzf
+      install -m 0755 /tmp/fzf /usr/local/bin/fzf
+
+      # eza (GitHub release binary; pinned fallback).
+      EZA_VER="$(curl -fsSL https://api.github.com/repos/eza-community/eza/releases/latest | grep -oP '"tag_name": *"v\K[0-9.]+' | head -1)"
+      EZA_VER="${EZA_VER:-0.20.14}"
+      curl -fsSL "https://github.com/eza-community/eza/releases/download/v${EZA_VER}/eza_x86_64-unknown-linux-gnu.tar.gz" -o /tmp/eza.tgz
+      tar -C /tmp -xzf /tmp/eza.tgz
+      install -m 0755 /tmp/eza /usr/local/bin/eza
+
+      # zoxide (official installer -> /usr/local/bin).
+      curl -fsSL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash -s -- --bin-dir /usr/local/bin
+
       # --- Everything below runs AS dev ---
       sudo -iu dev bash <<'DEVEOF'
       # NOTE: no 'set -u' — SDKMAN/nvm init scripts reference unbound vars and
