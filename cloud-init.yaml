@@ -46,6 +46,33 @@ write_files:
       #!/usr/bin/env bash
       set -euxo pipefail
 
+      # --- Persistent DATA volume (/data) — idempotent, NON-destructive ---
+      # The Hetzner volume "personal-dev-data" is attached separately (Terraform
+      # hcloud_volume_attachment). It holds repos, uncommitted work, dotfiles,
+      # gh token, GitHub SSH key, herdr state. Toolchains live on the ephemeral
+      # SSD; only /data is persistent. NEVER reformat an already-populated volume.
+      DATA_DEV=""
+      # Prefer the stable by-id path Hetzner exposes for every attached volume.
+      for d in /dev/disk/by-id/scsi-0HC_Volume_*; do
+        [ -e "$d" ] && DATA_DEV="$d" && break
+      done
+      if [ -n "$DATA_DEV" ]; then
+        REAL_DEV="$(readlink -f "$DATA_DEV")"
+        # Only mkfs if the device has NO filesystem yet (fresh volume). An
+        # already-formatted/populated volume MUST be preserved as-is.
+        if ! blkid "$REAL_DEV" >/dev/null 2>&1; then
+          mkfs.ext4 -F "$REAL_DEV"
+        fi
+        mkdir -p /data
+        # Mount by UUID for stability across device renames.
+        DATA_UUID="$(blkid -s UUID -o value "$REAL_DEV")"
+        if ! grep -q "$DATA_UUID" /etc/fstab; then
+          echo "UUID=$DATA_UUID /data ext4 discard,nofail,defaults 0 2" >> /etc/fstab
+        fi
+        mountpoint -q /data || mount /data
+        chown dev:dev /data
+      fi
+
       # --- CRITICAL: ensure dev owns its own home (cloud-init write_files can
       # create /home/dev as root before the users module; fix ownership first) ---
       chown -R dev:dev /home/dev
