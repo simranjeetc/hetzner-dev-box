@@ -228,7 +228,7 @@ write_files:
 
       # SDKMAN (Java + Maven + Gradle)
       curl -s "https://get.sdkman.io" | bash
-      set +u; source "$HOME/.sdkman/bin/sdkman-init.sh"; set -u || true
+      set +u; source "$HOME/.sdkman/bin/sdkman-init.sh"; set +u
       set +u
       sdk install java 21.0.5-tem
       sdk install maven
@@ -305,7 +305,7 @@ write_files:
         ssh-keyscan github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
       fi
       # 1) Clone the dotfiles repo (guard: skip if already present).
-      [ -d "$HOME/dotfiles" ] || git clone git@github.com:simranjeetc/dotfiles.git "$HOME/dotfiles"
+      [ -d "$HOME/dotfiles" ] || git clone git@github.com:simranjeetc/dotfiles.git "$HOME/dotfiles" || echo "WARN: dotfiles clone failed (SSH key may not be registered on GitHub yet)"
       # 2) oh-my-zsh unattended — no chsh, no zshrc clobber (setup.sh owns zshrc).
       if [ ! -d "$HOME/.oh-my-zsh" ]; then
         RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
@@ -313,12 +313,12 @@ write_files:
       # 3) Back up any pre-existing zshrc exactly once (before setup.sh overwrites).
       [ -f "$HOME/.zshrc" ] && [ ! -f "$HOME/.zshrc.pre-dotfiles" ] && cp "$HOME/.zshrc" "$HOME/.zshrc.pre-dotfiles"
       # 4) Run the repo's copy-based installer (copies zshrc/nvim/oh-my-zsh-custom).
-      cd "$HOME" && bash "$HOME/dotfiles/setup.sh"
+      [ -d "$HOME/dotfiles" ] && { cd "$HOME" && bash "$HOME/dotfiles/setup.sh" || echo "WARN: dotfiles setup.sh non-zero"; }
       # 5) JetBrainsMono Nerd Font (guard: skip if already installed).
       if ! fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
         mkdir -p "$HOME/.local/share/fonts"
-        curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip -o /tmp/JetBrainsMono.zip
-        unzip -o /tmp/JetBrainsMono.zip -d "$HOME/.local/share/fonts" >/dev/null
+        curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip -o /tmp/JetBrainsMono.zip || echo "WARN: nerd font download failed"
+        [ -f /tmp/JetBrainsMono.zip ] && unzip -o /tmp/JetBrainsMono.zip -d "$HOME/.local/share/fonts" >/dev/null
         rm -f /tmp/JetBrainsMono.zip
         fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
       fi
@@ -343,7 +343,7 @@ write_files:
         fi
         if [ -d "$SRC" ] && [ ! -L "$SRC" ]; then
           if [ ! -e "$DST" ] || [ -z "$(ls -A "$DST" 2>/dev/null)" ]; then
-            mkdir -p "$DST"; rsync -a "$SRC"/ "$DST"/; rm -rf "$SRC"
+            mkdir -p "$DST"; cp -a "$SRC"/. "$DST"/; rm -rf "$SRC"
           else
             mv "$SRC" "$SRC.bak-$TS"
           fi
