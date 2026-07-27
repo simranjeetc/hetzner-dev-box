@@ -70,6 +70,10 @@ Check provisioning finished:
 ssh dev@<server_ip> 'ls -la ~/.provision-complete && tail -n 20 /var/log/provision.log'
 ```
 
+Dotfiles (`simranjeetc/dotfiles`) are **auto-applied** by cloud-init: clone → oh-my-zsh
+(unattended) → `setup.sh` → JetBrainsMono Nerd Font → default shell `zsh`. All idempotent,
+so a rebuilt box comes up fully configured with no manual dotfiles step.
+
 ---
 
 ## Idle / Cost-Control

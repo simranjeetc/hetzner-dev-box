@@ -31,6 +31,7 @@ packages:
   - lsb-release
   - ufw
   - fail2ban
+  - fontconfig
 
 write_files:
   - path: /etc/ssh/sshd_config.d/99-hardening.conf
@@ -261,6 +262,36 @@ write_files:
       CSEOF
       systemctl --user daemon-reload 2>/dev/null || true
 
+      # --- Personal dotfiles (simranjeetc/dotfiles) — copy-based setup.sh ---
+      # Applies zsh/nvim/oh-my-zsh-custom config. Requires the github.com SSH
+      # config + known_hosts already written by the root section above (so the
+      # SSH clone authenticates and does not hang on host-key prompt). Fully
+      # idempotent: guards on repo dir, ~/.oh-my-zsh, and font presence.
+      # github.com is already in ~/.ssh/known_hosts (root block), but re-guard
+      # here to be safe if this block is ever run standalone.
+      mkdir -p "$HOME/.ssh"
+      if ! ssh-keygen -F github.com -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1; then
+        ssh-keyscan github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
+      fi
+      # 1) Clone the dotfiles repo (guard: skip if already present).
+      [ -d "$HOME/dotfiles" ] || git clone git@github.com:simranjeetc/dotfiles.git "$HOME/dotfiles"
+      # 2) oh-my-zsh unattended — no chsh, no zshrc clobber (setup.sh owns zshrc).
+      if [ ! -d "$HOME/.oh-my-zsh" ]; then
+        RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+      fi
+      # 3) Back up any pre-existing zshrc exactly once (before setup.sh overwrites).
+      [ -f "$HOME/.zshrc" ] && [ ! -f "$HOME/.zshrc.pre-dotfiles" ] && cp "$HOME/.zshrc" "$HOME/.zshrc.pre-dotfiles"
+      # 4) Run the repo's copy-based installer (copies zshrc/nvim/oh-my-zsh-custom).
+      cd "$HOME" && bash "$HOME/dotfiles/setup.sh"
+      # 5) JetBrainsMono Nerd Font (guard: skip if already installed).
+      if ! fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
+        mkdir -p "$HOME/.local/share/fonts"
+        curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip -o /tmp/JetBrainsMono.zip
+        unzip -o /tmp/JetBrainsMono.zip -d "$HOME/.local/share/fonts" >/dev/null
+        rm -f /tmp/JetBrainsMono.zip
+        fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
+      fi
+
       # --- Persist herdr + code-server state onto /data (symlink pattern) ---
       # These dirs must survive `terraform destroy` (only /data persists). We
       # migrate any real home dir onto /data (first boot) then replace it with a
@@ -299,6 +330,12 @@ write_files:
       done
 
       DEVEOF
+
+      # --- Default shell for dev -> zsh (needs root; dotfiles applied above). ---
+      # Idempotent: chsh is a no-op if already zsh. /usr/bin/zsh from the zsh pkg.
+      if [ "$(getent passwd dev | cut -d: -f7)" != "/usr/bin/zsh" ]; then
+        chsh -s /usr/bin/zsh dev
+      fi
 
       # Allow dev's systemd --user services (e.g. on-demand code-server) to run
       # without an active login session — needed for tablet/SSH use. This does
