@@ -11,6 +11,12 @@ terraform {
       version = "~> 1.45"
     }
   }
+  cloud {
+    organization = "hetzner-dev-simran"
+    workspaces {
+      name = "hetzner-box-simran-workspace"
+    }
+  }
 }
 
 variable "hcloud_token" {
