@@ -95,6 +95,52 @@ write_files:
       apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
       usermod -aG docker dev
 
+      # --- GitHub CLI (gh) via official apt repo ---
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+      apt-get update
+      apt-get install -y gh
+
+      # --- Persistent gh config dir on /data + global GH_CONFIG_DIR ---
+      # gh stores its auth token in $GH_CONFIG_DIR; pin it to /data so the token
+      # survives destroy/recreate. Env-var approach (no symlink). Do NOT run
+      # `gh auth login` here — the user completes the device flow manually.
+      mkdir -p /data/gh-config
+      chmod 700 /data/gh-config
+      chown dev:dev /data/gh-config
+      cat > /etc/profile.d/10-gh.sh <<'GHEOF'
+      export GH_CONFIG_DIR=/data/gh-config
+      GHEOF
+      chmod 644 /etc/profile.d/10-gh.sh
+
+      # --- Persistent GitHub SSH key on /data (NEVER overwrite existing key) ---
+      mkdir -p /data/ssh
+      chmod 700 /data/ssh
+      chown dev:dev /data/ssh
+      # Generate ONLY if the persistent key is absent (guard rebuilds).
+      if [ ! -f /data/ssh/id_ed25519_github ]; then
+        sudo -u dev ssh-keygen -t ed25519 -C "hetzner-dev-box-github" -f /data/ssh/id_ed25519_github -N ""
+      fi
+      chown dev:dev /data/ssh/id_ed25519_github /data/ssh/id_ed25519_github.pub
+      chmod 600 /data/ssh/id_ed25519_github
+      chmod 644 /data/ssh/id_ed25519_github.pub
+
+      # --- dev's ~/.ssh: github.com config block + known_hosts (idempotent) ---
+      mkdir -p /home/dev/.ssh
+      # Match Host line with optional leading whitespace so the guard is reliable.
+      if ! grep -qE "^[[:space:]]*Host[[:space:]]+github.com" /home/dev/.ssh/config 2>/dev/null; then
+        printf 'Host github.com\n    HostName github.com\n    User git\n    IdentityFile /data/ssh/id_ed25519_github\n    IdentitiesOnly yes\n' >> /home/dev/.ssh/config
+      fi
+      touch /home/dev/.ssh/known_hosts
+      if ! ssh-keygen -F github.com -f /home/dev/.ssh/known_hosts >/dev/null 2>&1; then
+        ssh-keyscan github.com >> /home/dev/.ssh/known_hosts 2>/dev/null || true
+      fi
+      chown -R dev:dev /home/dev/.ssh
+      chmod 700 /home/dev/.ssh
+      chmod 600 /home/dev/.ssh/config
+      chmod 644 /home/dev/.ssh/known_hosts
+
       # --- Go (official tarball, latest stable) ---
       GO_VER="1.23.4"
       curl -fsSL "https://go.dev/dl/go${GO_VER}.linux-amd64.tar.gz" -o /tmp/go.tgz
