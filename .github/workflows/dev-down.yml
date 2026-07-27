@@ -1,0 +1,55 @@
+name: dev-down
+
+# Tablet-triggered: tear the Hetzner dev box DOWN (terraform destroy).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: dev-box-terraform
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  dev-down:
+    name: terraform destroy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      # NOTE: hcloud_volume.data has prevent_destroy = true and the volume has
+      # delete_protection = true. A full `terraform destroy` would error on it.
+      # We destroy ONLY the compute + its attachment; the /data volume survives.
+      - name: Terraform destroy (compute only)
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          terraform destroy -auto-approve -input=false \
+            -target=hcloud_volume_attachment.data \
+            -target=hcloud_server.dev \
+            -target=hcloud_firewall.dev_fw \
+            -target=hcloud_ssh_key.keys
+
+      - name: Confirm teardown in job summary
+        run: |
+          {
+            echo "## dev-box is DOWN 🛑"
+            echo ""
+            echo "Compute destroyed — hourly compute billing has stopped."
+            echo ""
+            echo "> The \`/data\` volume (delete-protected) and any snapshot **survive**."
+            echo "> Your repos, uncommitted work, dotfiles, gh token and SSH key are safe."
+            echo "> Run **dev-up** to rebuild the box and re-attach \`/data\`."
+          } >> "$GITHUB_STEP_SUMMARY"

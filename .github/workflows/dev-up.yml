@@ -1,0 +1,52 @@
+name: dev-up
+
+# Tablet-triggered: bring the Hetzner dev box UP (terraform apply).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: dev-box-terraform
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  dev-up:
+    name: terraform apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Publish outputs to job summary
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          server_ip="$(terraform output -raw server_ip)"
+          ssh_command="$(terraform output -raw ssh_command)"
+          {
+            echo "## dev-box is UP ✅"
+            echo ""
+            echo "| Output | Value |"
+            echo "|--------|-------|"
+            echo "| Server IP | \`${server_ip}\` |"
+            echo "| SSH | \`${ssh_command}\` |"
+            echo ""
+            echo "> Compute is now billing hourly. Run **dev-down** to stop compute charges."
+          } >> "$GITHUB_STEP_SUMMARY"

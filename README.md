@@ -12,10 +12,10 @@ Day-to-day control is done from a tablet — no laptop required.
 
 | Action | How |
 |--------|-----|
-| **dev-up** | Run the `dev-up` GitHub Action (`workflow_dispatch`). Provisions the box via Terraform. |
-| **dev-down** | Run the `dev-down` GitHub Action (`workflow_dispatch`). Destroys compute (billing stops). `/data` volume persists (delete-protected). |
+| **dev-up** | GitHub → **Actions → dev-up → Run workflow**. Runs `terraform apply`. Server IP is printed to the run summary. |
+| **dev-down** | GitHub → **Actions → dev-down → Run workflow**. Destroys **compute only** (server + firewall + keys). Compute billing stops. `/data` volume persists (delete-protected). |
 | **SSH in** | Termius → `dev@<ip>`, using the tablet's SSH key. |
-| **Get the IP** | From the `dev-up` action output (`terraform output server_ip`). The public IP may change on rebuild. |
+| **Get the IP** | Read it straight off the **dev-up** run summary (`server_ip`). The public IP may change on rebuild. |
 
 > ⚠️ Hetzner bills hourly. A **powered-off** server still bills — only `dev-down` (destroy) stops compute charges.
 > Persistent work lives on the `/data` volume and survives destroy/rebuild.
