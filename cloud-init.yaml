@@ -8,13 +8,17 @@ users:
     groups: [sudo, docker]
     shell: /bin/bash
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
-    ssh_authorized_keys: []
     # NOTE: cloud-init auto-copies the server's ssh_keys (from Terraform) to this user
     # via the default flow when 'ssh_redirect_user' is not set. We rely on Terraform's
     # ssh_keys being applied to root; below we also propagate to dev.
 
 package_update: true
-package_upgrade: true
+# package_upgrade intentionally DISABLED: a base-image dev box does not need a
+# full apt upgrade on every rebuild, and it was pulling a kernel package whose
+# needrestart hook opened an interactive whiptail "Pending kernel upgrade"
+# dialog (Failed to open terminal / debconf giving up). Targeted installs below
+# run fully non-interactive instead.
+package_upgrade: false
 
 packages:
   - build-essential
@@ -46,6 +50,33 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euxo pipefail
+
+      # --- Non-interactive apt + robustness preamble --------------------------
+      # This script runs from cloud-init's runcmd with NO controlling terminal.
+      # Any package whose postinst/needrestart hook tries to prompt (e.g. the
+      # "Pending kernel upgrade" whiptail dialog) will "Failed to open terminal"
+      # and pollute the log; historically this ran alongside a full apt upgrade
+      # that pulled a new kernel. We force EVERY apt op non-interactive and make
+      # needrestart apply restarts automatically (mode 'a') so nothing blocks.
+      export DEBIAN_FRONTEND=noninteractive
+      export NEEDRESTART_MODE=a
+      export NEEDRESTART_SUSPEND=1
+      # Belt-and-suspenders: pin needrestart to automatic restarts on disk too,
+      # in case a sub-shell drops the env var.
+      if [ -d /etc/needrestart ]; then
+        echo "\$nrconf{restart} = 'a';" > /etc/needrestart/needrestart.conf.d/50-autorestart.conf 2>/dev/null || \
+          { mkdir -p /etc/needrestart/needrestart.conf.d; echo "\$nrconf{restart} = 'a';" > /etc/needrestart/needrestart.conf.d/50-autorestart.conf; }
+      fi
+      # Default apt-get flags: keep existing config files, never prompt on conffile
+      # conflicts. Applied via a helper so every install/upgrade is consistent.
+      APT_OPTS=(-y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+      apti() { apt-get "${APT_OPTS[@]}" install "$@"; }
+      # CRITICAL: cloud-init runcmd runs with HOME unset. Several vendored
+      # installers (zoxide's install.sh line 77: "${HOME}/.local/bin", uv, etc.)
+      # dereference $HOME unconditionally; under `set -u` an unset HOME aborts the
+      # ENTIRE script — this is what previously killed provisioning right before
+      # the `sudo -iu dev` block (herdr, code-server, dotfiles, chsh all skipped).
+      export HOME="${HOME:-/root}"
 
       # --- Persistent DATA volume (/data) — idempotent, NON-destructive ---
       # The Hetzner volume "personal-dev-data" is attached separately (Terraform
@@ -93,7 +124,7 @@ write_files:
       chmod a+r /etc/apt/keyrings/docker.gpg
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
       apt-get update
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      apti docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
       usermod -aG docker dev
 
       # --- GitHub CLI (gh) via official apt repo ---
@@ -101,7 +132,7 @@ write_files:
       chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
       apt-get update
-      apt-get install -y gh
+      apti gh
 
       # --- Persistent gh config dir on /data + global GH_CONFIG_DIR ---
       # gh stores its auth token in $GH_CONFIG_DIR; pin it to /data so the token
@@ -152,7 +183,7 @@ write_files:
       # nvim>=0.10, lazygit, fzf, ripgrep, fd, zoxide, eza, bat. Idempotent.
       # tmux is already installed via the packages: list above (not duplicated here).
       # Binaries land on /usr/local/bin (already on PATH). No dotfiles/plugins here.
-      apt-get install -y ripgrep fd-find bat
+      apti ripgrep fd-find bat
       # Ubuntu ships fdfind/batcat; expose canonical names on PATH.
       ln -sf "$(command -v fdfind)" /usr/local/bin/fd
       ln -sf "$(command -v batcat)" /usr/local/bin/bat
