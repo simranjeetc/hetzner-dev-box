@@ -216,6 +216,46 @@ write_files:
       # opencode
       curl -fsSL https://opencode.ai/install | bash
 
+      # herdr (terminal workspace manager for AI agents) — single static
+      # binary to ~/.local/bin/herdr, no root. State/config lives ENTIRELY
+      # under ~/.config/herdr (sessions, sockets, session.json persistence).
+      command -v herdr >/dev/null 2>&1 || curl -fsSL https://herdr.dev/install.sh | sh
+
+      # code-server (VS Code in the browser) — ON-DEMAND only.
+      # Installed system-wide (/usr/bin/code-server). A systemd --user unit is
+      # created below but DELIBERATELY NOT enabled at boot: it must be started
+      # manually (`systemctl --user start code-server`) so it consumes no RAM
+      # by default. Strong random password on first install only (idempotent).
+      command -v code-server >/dev/null 2>&1 || curl -fsSL https://code-server.dev/install.sh | sh
+      mkdir -p "$HOME/.config/code-server"
+      if [ ! -f "$HOME/.config/code-server/config.yaml" ]; then
+        CSPW="$(openssl rand -base64 24 | tr -d /+= | cut -c1-32)"
+        cat > "$HOME/.config/code-server/config.yaml" <<CSEOF
+      bind-addr: 0.0.0.0:8443
+      auth: password
+      password: $CSPW
+      cert: false
+      CSEOF
+        chmod 600 "$HOME/.config/code-server/config.yaml"
+      fi
+      # systemd --user unit — created but NOT enabled (manual start/stop).
+      mkdir -p "$HOME/.config/systemd/user"
+      cat > "$HOME/.config/systemd/user/code-server.service" <<CSEOF
+      [Unit]
+      Description=code-server (on-demand)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=exec
+      ExecStart=/usr/bin/code-server --config %h/.config/code-server/config.yaml --idle-timeout-seconds 1800
+      Restart=on-failure
+
+      [Install]
+      WantedBy=default.target
+      CSEOF
+      systemctl --user daemon-reload 2>/dev/null || true
+
       # PATH for all tools in both shells
       for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
         grep -q ".opencode/bin" "$RC" 2>/dev/null || \
@@ -223,6 +263,12 @@ write_files:
       done
 
       DEVEOF
+
+      # Allow dev's systemd --user services (e.g. on-demand code-server) to run
+      # without an active login session — needed for tablet/SSH use. This does
+      # NOT enable code-server at boot; it only lets `systemctl --user start`
+      # work over a plain SSH session.
+      loginctl enable-linger dev
 
       # Global toolchain env: sourced by ALL login shells (interactive OR not),
       # e.g. `ssh host "cmd"`, opencode subprocesses, build scripts. Fixes the
