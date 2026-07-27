@@ -150,6 +150,88 @@ Full rebuild from scratch:
 
 ---
 
+## Emergency / Ad-hoc Access (no usual SSH key)
+
+SSH to the box is **key-only** — `PasswordAuthentication no` (`cloud-init.yaml:43`)
+and the `dev` user is **password-locked**, so password SSH is never an option.
+Ports **22** and **8443** are open to the whole internet (`0.0.0.0/0`).
+
+> ⚠️ **Do NOT use code-server (`:8443`) from an untrusted/borrowed machine.** It
+> is **plain HTTP** (`cert:false`) with a reusable password — the password
+> travels in **cleartext** and is exposed to keyloggers / saved browser creds.
+
+**Keyless foot-in-the-door:** the **Hetzner Cloud Console** has a per-server
+**"Console"** button (`console.hetzner.cloud` → select the dev server → **Console**)
+= a keyless browser terminal. It needs only your Hetzner account login and works
+from a phone. Use it to reach the dev shell when you have no key.
+
+**Key rules:**
+- **Always generate the keypair on the machine you will SSH _from_**, never on the box.
+- The box's `~/.ssh/authorized_keys` is **regenerated fresh on every
+  `dev-down`/`dev-up`** from the Hetzner-account keys defined in terraform. A key
+  hand-added to the **live** box is **temporary** — **wiped on the next rebuild**
+  and **not** persisted to `/data`.
+- To make a key **permanent**, add it to the `ssh_public_keys` map in
+  `terraform/terraform.tfvars` (map key = device name, value = the ed25519 public
+  key), commit + push; a rebuild bakes it in. Current entries: `worklaptop`, `tablet`.
+- To add a **temp** key you edit the **box's** `~/.ssh/authorized_keys` directly
+  (via the browser Console) — **not** the Hetzner web UI "SSH Keys" page (those
+  keys are injected only at server **creation**, not onto a running box).
+
+### Runbook A — borrowed / untrusted laptop (temporary, leave nothing behind)
+
+1. From your phone or any browser, log into `console.hetzner.cloud` → select the
+   dev server → click **Console** (keyless browser terminal; use it to reach the
+   dev shell).
+2. On the borrowed laptop, generate a **throwaway** keypair:
+   ```bash
+   ssh-keygen -t ed25519 -f ~/throwaway -N ''
+   ```
+3. In the browser Console, append the throwaway **public** key to the box:
+   ```bash
+   echo 'ssh-ed25519 AAAA...throwaway' >> /home/dev/.ssh/authorized_keys
+   ```
+4. Do your real work over normal SSH from the borrowed laptop:
+   ```bash
+   ssh -i ~/throwaway dev@<IP>
+   ```
+5. **On exit — server-side revocation (the whole point):** remove that one line
+   from `/home/dev/.ssh/authorized_keys` (edit the file and delete the throwaway
+   line). The throwaway key is now **dead even if the borrowed laptop kept a
+   copy**. Then also:
+   ```bash
+   rm -f ~/throwaway*        # on the borrowed laptop
+   ```
+   clear the browser session, and **rotate your Hetzner account password from your
+   own machine** afterward.
+
+> The temp key would be wiped by a rebuild anyway, but **revoke it explicitly**
+> rather than relying on that.
+
+### Runbook B — new permanent laptop (make a key stick across rebuilds)
+
+1. On the new laptop, generate the key:
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/hetzner_<name> -C hetzner-<name>-<date>
+   ```
+2. Add the **public** key to `terraform/terraform.tfvars` under `ssh_public_keys`, e.g.:
+   ```hcl
+   newlaptop = "ssh-ed25519 AAAA... hetzner-newlaptop-YYYYMMDD"
+   ```
+3. **Commit + push.** The next `dev-up` rebuild bakes the key in permanently.
+4. If the box is currently **up** and you need access before a rebuild, bootstrap a
+   **temporary** copy now via the browser Console so you can SSH immediately —
+   **but still do the tfvars edit for permanence**:
+   ```bash
+   echo '<pubkey>' >> /home/dev/.ssh/authorized_keys
+   ```
+   (You can even make the tfvars edit from **inside the box** — it has a clone of
+   this repo and can `git push` to trigger the rebuild.)
+5. ⚠️ **Don't delete** the existing `worklaptop` / `tablet` keys until the new key
+   is **proven working**.
+
+---
+
 ## Vendor portability note
 
 The setup is **mostly portable** (cloud-init + dotfiles). To move off Hetzner,
