@@ -43,6 +43,10 @@ write_files:
       PasswordAuthentication no
       PermitRootLogin prohibit-password
       X11Forwarding no
+      ClientAliveInterval 60
+      ClientAliveCountMax 3
+      TCPKeepAlive yes
+      LoginGraceTime 30
 
   - path: /opt/provision.sh
     permissions: "0755"
@@ -179,8 +183,13 @@ write_files:
       chmod 600 /data/ssh/id_ed25519_github
       chmod 644 /data/ssh/id_ed25519_github.pub
 
-      # --- dev's ~/.ssh: github.com config block + known_hosts (idempotent) ---
+      # --- dev's ~/.ssh: keepalive defaults + github.com config block + known_hosts (idempotent) ---
       mkdir -p /home/dev/.ssh
+      # Client-side SSH keepalive: write Host * block first so it acts as default.
+      # Placed before the github.com block to ensure it is the first matching Host.
+      if ! grep -qE "^[[:space:]]*Host[[:space:]]+\*[[:space:]]*$" /home/dev/.ssh/config 2>/dev/null; then
+        printf 'Host *\n    ServerAliveInterval 60\n    ServerAliveCountMax 3\n' >> /home/dev/.ssh/config
+      fi
       # Match Host line with optional leading whitespace so the guard is reliable.
       if ! grep -qE "^[[:space:]]*Host[[:space:]]+github.com" /home/dev/.ssh/config 2>/dev/null; then
         printf 'Host github.com\n    HostName github.com\n    User git\n    IdentityFile /data/ssh/id_ed25519_github\n    IdentitiesOnly yes\n' >> /home/dev/.ssh/config
