@@ -44,19 +44,16 @@ jobs:
             [$t, .location, .price_hourly.net, .price_monthly.net] | @tsv
           ' <<<"${pricing}")
 
-          VOL_PPGB="$(jq -r '.pricing.volume_prices.price_per_gb_per_month.net // "0.0767"' <<<"${pricing}")"
-          IPV4_H="$(jq  -r '.pricing.ipv4.price_hourly.net   // "0.001000"'   <<<"${pricing}")"
-          IPV4_M="$(jq  -r '.pricing.ipv4.price_monthly.net  // "0.60"'       <<<"${pricing}")"
-          IPV6_H="$(jq  -r '.pricing.ipv6.price_hourly.net   // "0"'          <<<"${pricing}")"
-          IPV6_M="$(jq  -r '.pricing.ipv6.price_monthly.net  // "0"'          <<<"${pricing}")"
+          VOL_PPGB="$(jq -r '.pricing.volume.price_per_gb_month.net // "0.0767"' <<<"${pricing}")"
+          IPV4_H="$(jq  -r '(.pricing.primary_ips[] | select(.type=="ipv4") | .prices[0].price_hourly.net)  // "0.001000"' <<<"${pricing}")"
+          IPV4_M="$(jq  -r '(.pricing.primary_ips[] | select(.type=="ipv4") | .prices[0].price_monthly.net) // "0.60"'     <<<"${pricing}")"
+          IPV6_H="$(jq  -r '(.pricing.primary_ips[] | select(.type=="ipv6") | .prices[0].price_hourly.net)  // "0"'        <<<"${pricing}")"
+          IPV6_M="$(jq  -r '(.pricing.primary_ips[] | select(.type=="ipv6") | .prices[0].price_monthly.net) // "0"'        <<<"${pricing}")"
 
-          FIPV4_M="$(jq  -r '
-            ((.pricing.floating_ips // []) |
-             map(select((.description // .type // "") | test("ipv4|^$"; "i"))) |
-             .[0].prices[0].price_monthly.net) // "3.50"
-          ' <<<"${pricing}" 2>/dev/null || echo "3.50")"
-          FIPV4_M="${FIPV4_M:-3.50}"
-          FIPV6_M="0"; FIPV6_H="0"
+          FIPV4_M="$(jq  -r '(.pricing.floating_ips[] | select(.type=="ipv4") | .prices[0].price_monthly.net) // "3.50"' <<<"${pricing}")"
+          FIPV6_M="$(jq  -r '(.pricing.floating_ips[] | select(.type=="ipv6") | .prices[0].price_monthly.net) // "0"'    <<<"${pricing}")"
+          FIPV4_H="$(awk -v m="${FIPV4_M}" 'BEGIN{printf "%.6f", m/(24*30)}')"
+          FIPV6_H="$(awk -v m="${FIPV6_M}" 'BEGIN{printf "%.6f", m/(24*30)}')"
 
           now=$(date -u +%s)
           yesterday=$((now - 86400))
@@ -119,14 +116,14 @@ jobs:
             esac
             add_row "${name}" "${typ}@${loc}" "$(date -u -d "${created}" +%s)" "${h}" "${m}"
           done < <(curl -fsS "${AUTH[@]}" "${API}/primary_ips" | jq -r '
-            .primary_ips[] | [.name, .type, (.datacenter.location.name // ""), .created] | @tsv
+            .primary_ips[] | [.name, .type, (.location.name // ""), .created] | @tsv
           ' 2>/dev/null || true)
 
           # ---- floating IPs ----------------------------------------------
           while IFS=$'\t' read -r name typ created; do
             [[ -z "${name:-}" ]] && continue
             case "${typ}" in
-              ipv4) h="$(awk -v m="${FIPV4_M}" 'BEGIN{printf "%.6f", m/(24*30)}')"; m="${FIPV4_M}" ;;
+              ipv4) h="${FIPV4_H}"; m="${FIPV4_M}" ;;
               ipv6) h="${FIPV6_H}"; m="${FIPV6_M}" ;;
               *)    h="0";         m="0" ;;
             esac
