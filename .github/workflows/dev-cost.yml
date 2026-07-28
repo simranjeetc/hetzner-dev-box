@@ -1,0 +1,162 @@
+name: dev-cost
+
+# Tablet-triggered: read-only cost report from the Hetzner Cloud API.
+# Computes spend as `pricing.rate × resource.age` for all-time-since-first-resource
+# and last-24h. No billing API exists in Hetzner, so this is a client-side estimate
+# (net, ex VAT); the true balance is visible in the Hetzner Console.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: dev-box-terraform
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dev-cost:
+    name: Dev Box Cost (spend estimate)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query Hetzner Cloud API
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          API="https://api.hetzner.cloud/v1"
+          AUTH=(-H "Authorization: Bearer ${HCLOUD_TOKEN}")
+
+          # ------------------------------------------------------------------
+          # Pricing catalog — pulled live from /v1/pricing (net, ex VAT).
+          # ------------------------------------------------------------------
+          pricing="$(curl -fsS "${AUTH[@]}" "${API}/pricing")"
+
+          declare -A SRV_H SRV_M
+          while IFS=$'\t' read -r t loc h m; do
+            SRV_H["${t}@${loc}"]="${h}"
+            SRV_M["${t}@${loc}"]="${m}"
+          done < <(jq -r '
+            .pricing.server_types[] |
+            .name as $t |
+            .prices[] |
+            [$t, .location, .price_hourly.net, .price_monthly.net] | @tsv
+          ' <<<"${pricing}")
+
+          VOL_PPGB="$(jq -r '.pricing.volume_prices.price_per_gb_per_month.net // "0.0767"' <<<"${pricing}")"
+          IPV4_H="$(jq  -r '.pricing.ipv4.price_hourly.net   // "0.001000"'   <<<"${pricing}")"
+          IPV4_M="$(jq  -r '.pricing.ipv4.price_monthly.net  // "0.60"'       <<<"${pricing}")"
+          IPV6_H="$(jq  -r '.pricing.ipv6.price_hourly.net   // "0"'          <<<"${pricing}")"
+          IPV6_M="$(jq  -r '.pricing.ipv6.price_monthly.net  // "0"'          <<<"${pricing}")"
+
+          FIPV4_M="$(jq  -r '
+            ((.pricing.floating_ips // []) |
+             map(select((.description // .type // "") | test("ipv4|^$"; "i"))) |
+             .[0].prices[0].price_monthly.net) // "3.50"
+          ' <<<"${pricing}" 2>/dev/null || echo "3.50")"
+          FIPV4_M="${FIPV4_M:-3.50}"
+          FIPV6_M="0"; FIPV6_H="0"
+
+          now=$(date -u +%s)
+          yesterday=$((now - 86400))
+
+          # cost <created_ts> <hourly> <monthly_cap>  ->  "age_h\tspend_all\tspend_24h"
+          cost() {
+            awk -v c="$1" -v h="$2" -v m="$3" -v now="${now}" -v y="${yesterday}" 'BEGIN{
+              el=(now-c)/3600.0;   if(el<0) el=0
+              b=(c>y)?c:y
+              d24=(now-b)/3600.0;  if(d24<0) d24=0
+              sa=el*h;  if(sa>m) sa=m
+              s24=d24*h; if(s24>m) s24=m
+              printf "%.3f\t%.3f\t%.3f\n", el, sa, s24
+            }'
+          }
+
+          md=""
+          sum_all="0"; sum_24="0"
+
+          add_row() {  # name typeloc created_ts hourly monthly
+            local name="$1" typeloc="$2" cts="$3" h="$4" m="$5"
+            local out age sa s24
+            out="$(cost "${cts}" "${h}" "${m}")"
+            age="${out%%$'\t'*}"; rest="${out#*$'\t'}"
+            sa="${rest%%$'\t'*}"; s24="${rest#*$'\t'}"
+            md="${md}| \`${name}\` | \`${typeloc}\` | ${age} | ${sa} | ${s24} |"$'\n'
+            sum_all="$(awk -v a="${sum_all}" -v x="${sa}"  'BEGIN{printf "%.6f", a+x}')"
+            sum_24="$(awk -v a="${sum_24}"  -v x="${s24}"  'BEGIN{printf "%.6f", a+x}')"
+            printf '| %-18s | %-14s | %8s | %7s | %7s |\n' "${name}" "${typeloc}" "${age}" "${sa}" "${s24}"
+          }
+
+          # ---- servers ----------------------------------------------------
+          while IFS=$'\t' read -r name typ loc created; do
+            [[ -z "${name:-}" ]] && continue
+            key="${typ}@${loc}"
+            h="${SRV_H[${key}]:-0}"
+            m="${SRV_M[${key}]:-0}"
+            add_row "${name}" "${typ}@${loc}" "$(date -u -d "${created}" +%s)" "${h}" "${m}"
+          done < <(curl -fsS "${AUTH[@]}" "${API}/servers" | jq -r '
+            .servers[] | [.name, .server_type.name, .location.name, .created] | @tsv
+          ' 2>/dev/null || true)
+
+          # ---- volumes ----------------------------------------------------
+          while IFS=$'\t' read -r name size loc created; do
+            [[ -z "${name:-}" ]] && continue
+            m="$(awk -v s="${size}" -v p="${VOL_PPGB}" 'BEGIN{printf "%.6f", s*p}')"
+            h="$(awk -v m="${m}" 'BEGIN{printf "%.6f", m/(24*30)}')"
+            add_row "${name}" "vol@${loc}" "$(date -u -d "${created}" +%s)" "${h}" "${m}"
+          done < <(curl -fsS "${AUTH[@]}" "${API}/volumes" | jq -r '
+            .volumes[] | [.name, (.size|tostring), .location.name, .created] | @tsv
+          ' 2>/dev/null || true)
+
+          # ---- primary IPs ------------------------------------------------
+          while IFS=$'\t' read -r name typ loc created; do
+            [[ -z "${name:-}" ]] && continue
+            case "${typ}" in
+              ipv4) h="${IPV4_H}"; m="${IPV4_M}" ;;
+              ipv6) h="${IPV6_H}"; m="${IPV6_M}" ;;
+              *)    h="0";        m="0" ;;
+            esac
+            add_row "${name}" "${typ}@${loc}" "$(date -u -d "${created}" +%s)" "${h}" "${m}"
+          done < <(curl -fsS "${AUTH[@]}" "${API}/primary_ips" | jq -r '
+            .primary_ips[] | [.name, .type, (.datacenter.location.name // ""), .created] | @tsv
+          ' 2>/dev/null || true)
+
+          # ---- floating IPs ----------------------------------------------
+          while IFS=$'\t' read -r name typ created; do
+            [[ -z "${name:-}" ]] && continue
+            case "${typ}" in
+              ipv4) h="$(awk -v m="${FIPV4_M}" 'BEGIN{printf "%.6f", m/(24*30)}')"; m="${FIPV4_M}" ;;
+              ipv6) h="${FIPV6_H}"; m="${FIPV6_M}" ;;
+              *)    h="0";         m="0" ;;
+            esac
+            add_row "${name}" "${typ}@floating" "$(date -u -d "${created}" +%s)" "${h}" "${m}"
+          done < <(curl -fsS "${AUTH[@]}" "${API}/floating_ips" | jq -r '
+            .floating_ips[] | [.name, .type, .created] | @tsv
+          ' 2>/dev/null || true)
+
+          if [[ -z "${md}" ]]; then
+            md="_(no billable resources found)_\n"
+            echo "(no billable resources found)"
+          fi
+
+          tot_all="$(awk -v a="${sum_all}" 'BEGIN{printf "%.3f", a}')"
+          tot_24="$(awk  -v a="${sum_24}"  'BEGIN{printf "%.3f", a}')"
+          run_rate="$(awk -v a="${sum_24}" 'BEGIN{printf "%.3f", a*30}')"
+
+          {
+            echo "## dev-box cost estimate (net, ex VAT)"
+            echo ""
+            echo "| Resource | Type@Loc | Age (h) | All-time € | 24h € |"
+            echo "|---|---|---|---|---|"
+            printf '%b' "${md}"
+            echo ""
+            echo "**Totals**"
+            echo "- All-time: €${tot_all}"
+            echo "- Last 24h: €${tot_24}"
+            echo "- Projected monthly run-rate (24h × 30): €${run_rate}/mo"
+            echo ""
+            echo "_Estimated via \`pricing.rate × resource.age\` from Hetzner Cloud API. No billing API exists — true balance visible in Console._"
+          } | tee -a "${GITHUB_STEP_SUMMARY}"
+
+          exit 0
