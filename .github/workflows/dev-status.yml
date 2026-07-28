@@ -1,0 +1,54 @@
+name: dev-status
+
+# Tablet-triggered: report whether the Hetzner dev box is UP or DOWN.
+# Read-only — queries the Hetzner Cloud API directly, no terraform, no SSH.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: dev-box-terraform
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dev-status:
+    name: Dev Box Status (up/down)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query Hetzner Cloud API
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          set -euo pipefail
+          status="$(curl -fsS \
+            -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+            "https://api.hetzner.cloud/v1/servers?name=personal-dev" \
+            | jq -r '.servers[0].status // "absent"')"
+
+          echo "Server status: ${status}"
+
+          verdict="down"
+          icon="❌ DOWN"
+          case "${status}" in
+            running)        verdict="up";   icon="✅ UP" ;;
+            off|stopped)    verdict="down"; icon="❌ DOWN" ;;
+            absent)         verdict="down"; icon="❌ DOWN (absent)" ;;
+            *)              verdict="down"; icon="❌ DOWN (status: ${status})" ;;
+          esac
+
+          {
+            echo "## dev-box is ${icon}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Server name | \`personal-dev\` |"
+            echo "| API status | \`${status}\` |"
+            echo "| Verdict | **${verdict}** |"
+            echo ""
+            echo "Source: \`GET https://api.hetzner.cloud/v1/servers?name=personal-dev\`"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          echo "verdict=${verdict}"
+          exit 0
