@@ -165,6 +165,34 @@ Ports **22** and **8443** are open to the whole internet (`0.0.0.0/0`).
 = a keyless browser terminal. It needs only your Hetzner account login and works
 from a phone. Use it to reach the dev shell when you have no key.
 
+### Optional: Break-glass console password (dev)
+
+By default the Hetzner web console `login:` prompt rejects **everything** —
+both `root` and `dev` have **locked** passwords in `/etc/shadow` (`dev` via
+cloud-init's `lock_passwd` default, `root` via the Ubuntu base image), because
+the box is intentionally key-only. If you ever need a console-only password for
+`dev` (this does **NOT** enable SSH password auth):
+
+1. **Off-box**, generate a SHA-512 hash (enter your chosen password when prompted):
+   ```bash
+   openssl passwd -6
+   ```
+2. **On the box** (via SSH), persist the `chpasswd -e` line on `/data`:
+   ```bash
+   mkdir -p /data/console
+   echo 'dev:$6$....hash....' > /data/console/console_passwd.hash
+   chmod 600 /data/console/console_passwd.hash
+   ```
+3. It applies on the **next boot** (lives on `/data`, survives rebuilds, is
+   **never committed**). Reboot or wait for the next `dev-up` to activate.
+
+It's a **second factor** behind your Hetzner panel login, targets `dev` (which
+has NOPASSWD sudo), leaves `root` locked, and **never weakens sshd**
+(`PasswordAuthentication` stays `no`).
+
+**To disable:** delete `/data/console/console_passwd.hash` and, if it's already
+applied to a running box, run `passwd -l dev` to re-lock the account.
+
 **Key rules:**
 - **Always generate the keypair on the machine you will SSH _from_**, never on the box.
 - The box's `~/.ssh/authorized_keys` is **regenerated fresh on every

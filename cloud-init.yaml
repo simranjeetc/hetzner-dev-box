@@ -124,6 +124,21 @@ write_files:
       chmod 700 /home/dev/.ssh
       chmod 600 /home/dev/.ssh/authorized_keys || true
 
+      # --- OPTIONAL emergency console password (break-glass, second factor) ---
+      # Hetzner web console (getty on ttyS0/tty1) shows `login:` but BOTH root and
+      # dev are password-locked (dev via cloud-init lock_passwd default, root via
+      # base image), so no credential works. To enable console login in an emergency,
+      # drop a PRE-HASHED password line into the persistent file below (NEVER in git).
+      # Format is chpasswd -e input:   dev:$6$salt$hash
+      # Generate the hash off-box:  openssl passwd -6   (or: mkpasswd -m sha-512)
+      # This does NOT weaken sshd: PasswordAuthentication stays `no`, so this password
+      # is usable ONLY at the Hetzner panel console, which is itself gated by your
+      # Hetzner account login (true second factor). Targets dev (has NOPASSWD sudo);
+      # root stays locked.
+      if [ -f /data/console/console_passwd.hash ]; then
+        chpasswd -e < /data/console/console_passwd.hash
+      fi
+
       # --- Docker ---
       install -m 0755 -d /etc/apt/keyrings
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
