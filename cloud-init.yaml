@@ -36,6 +36,7 @@ packages:
   - ufw
   - fail2ban
   - fontconfig
+  - locales
 
 write_files:
   - path: /etc/ssh/sshd_config.d/99-hardening.conf
@@ -81,6 +82,12 @@ write_files:
       # ENTIRE script — this is what previously killed provisioning right before
       # the `sudo -iu dev` block (herdr, code-server, dotfiles, chsh all skipped).
       export HOME="${HOME:-/root}"
+
+      # --- Locale baseline ---
+      # Fresh rebuilds can reject client-sent UTF-8 locales, which breaks manpath
+      # and prompt glyph rendering. Keep this deterministic across dev-up cycles.
+      locale-gen en_US.UTF-8
+      update-locale LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8
 
       # --- Persistent DATA volume (/data) — idempotent, NON-destructive ---
       # The Hetzner volume "personal-dev-data" is attached separately (Terraform
