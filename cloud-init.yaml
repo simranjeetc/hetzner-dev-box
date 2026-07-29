@@ -410,6 +410,13 @@ write_files:
       # (installed via curl opencode.ai/install above) stays ephemeral/self-
       # updating on the OS disk — only the CONFIG needs to live on /data.
       migrate_or_link "$HOME/.config/opencode"         "/data/opencode-config"
+      # opencode AUTH + local state persistence. Unlike ~/.config/opencode (settings),
+      # auth.json (provider credentials / opencode-go login), opencode.db (chat
+      # history), mcp-auth.json, and snapshots live under ~/.local/share/opencode.
+      # That dir is NOT covered by the config symlink above, so without this it sits
+      # on the ephemeral OS disk and is wiped on every dev-down/dev-up — the user
+      # "loses their key" after a rebuild. Persist it onto /data like the rest.
+      migrate_or_link "$HOME/.local/share/opencode"    "/data/opencode-share"
       # Seed the opencode version pin on /data (idempotent). On a truly-fresh
       # /data this writes the last-known-good default so future rebuilds read a
       # deterministic pin at install time (line ~254). NEVER clobber an existing
