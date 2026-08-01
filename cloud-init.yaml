@@ -116,6 +116,32 @@ write_files:
         chown dev:dev /data
       fi
 
+      # --- Persistent SSH HOST keys on /data (stable server identity) ---
+      # cloud-init generates fresh host keys on every NEW instance (by design,
+      # so images don't share keys across clones). Since dev-down/dev-up fully
+      # destroys and recreates the server (only /data + the reserved IP
+      # survive), the host key used to change on every rebuild even though the
+      # IP stayed the same — this is what caused SSH clients to reject the box
+      # every time with "REMOTE HOST IDENTIFICATION HAS CHANGED" (or refuse
+      # outright), requiring a manual `ssh-keygen -R <ip>` each cycle. Fix:
+      # persist the host keys to /data once, then restore them on every boot
+      # BEFORE sshd is (re)started below, so the box's identity never changes.
+      mkdir -p /data/ssh/host_keys
+      chmod 700 /data/ssh/host_keys
+      if [ ! -f /data/ssh/host_keys/ssh_host_ed25519_key ]; then
+        # First boot ever (or /data lost): adopt whatever sshd/cloud-init just
+        # generated as the permanent identity going forward.
+        cp -a /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub /data/ssh/host_keys/
+      else
+        # Rebuild: restore the persisted identity over the fresh ones cloud-init
+        # just generated for this new instance.
+        cp -a /data/ssh/host_keys/ssh_host_*_key /data/ssh/host_keys/ssh_host_*_key.pub /etc/ssh/
+      fi
+      chown root:root /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
+      chmod 600 /etc/ssh/ssh_host_*_key
+      chmod 644 /etc/ssh/ssh_host_*_key.pub
+      systemctl restart ssh
+
       # --- CRITICAL: ensure dev owns its own home (cloud-init write_files can
       # create /home/dev as root before the users module; fix ownership first) ---
       chown -R dev:dev /home/dev
