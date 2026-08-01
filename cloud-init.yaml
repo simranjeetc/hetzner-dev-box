@@ -204,6 +204,18 @@ write_files:
       GHEOF
       chmod 644 /etc/profile.d/10-gh.sh
 
+      # --- Persistent Claude Code config dir on /data + CLAUDE_CONFIG_DIR ---
+      # Claude Code's own config lives in $CLAUDE_CONFIG_DIR (official override,
+      # same mechanism as GH_CONFIG_DIR above). Pin it to /data so settings,
+      # session history, and credentials survive destroy/recreate.
+      mkdir -p /data/claude-config
+      chmod 700 /data/claude-config
+      chown dev:dev /data/claude-config
+      cat > /etc/profile.d/10-claude.sh <<'CLAUDEEOF'
+      export CLAUDE_CONFIG_DIR=/data/claude-config
+      CLAUDEEOF
+      chmod 644 /etc/profile.d/10-claude.sh
+
       # --- Persistent GitHub SSH key on /data (NEVER overwrite existing key) ---
       mkdir -p /data/ssh
       chmod 700 /data/ssh
@@ -456,6 +468,8 @@ write_files:
       for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
         grep -q ".opencode/bin" "$RC" 2>/dev/null || \
           echo 'export PATH=$PATH:$HOME/.opencode/bin:$HOME/.local/bin:/usr/local/go/bin:$HOME/go/bin' >> "$RC"
+        grep -q "CLAUDE_CONFIG_DIR" "$RC" 2>/dev/null || \
+          echo 'export CLAUDE_CONFIG_DIR=/data/claude-config' >> "$RC"
       done
 
       DEVEOF
