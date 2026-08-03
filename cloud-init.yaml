@@ -216,6 +216,20 @@ write_files:
       CLAUDEEOF
       chmod 644 /etc/profile.d/10-claude.sh
 
+      # --- Also export GH/CLAUDE config dirs via /etc/zsh/zshenv ---
+      # WHY: non-interactive, non-login zsh shells (what opencode and other
+      # agent harnesses spawn per command) source NEITHER /etc/profile.d/*.sh
+      # NOR ~/.zshrc — zsh only reads zshenv in that context. Without these
+      # exports, gh/claude appear unauthenticated inside agent shells even
+      # though valid tokens exist on /data. Ubuntu ships /etc/zsh/zshenv (sets
+      # PATH) — append, do NOT overwrite. Grep-guarded so rebuilds stay clean.
+      touch /etc/zsh/zshenv
+      chmod 644 /etc/zsh/zshenv
+      grep -q "GH_CONFIG_DIR" /etc/zsh/zshenv 2>/dev/null || \
+        echo 'export GH_CONFIG_DIR=/data/gh-config' >> /etc/zsh/zshenv
+      grep -q "CLAUDE_CONFIG_DIR" /etc/zsh/zshenv 2>/dev/null || \
+        echo 'export CLAUDE_CONFIG_DIR=/data/claude-config' >> /etc/zsh/zshenv
+
       # --- Persistent GitHub SSH key on /data (NEVER overwrite existing key) ---
       mkdir -p /data/ssh
       chmod 700 /data/ssh
