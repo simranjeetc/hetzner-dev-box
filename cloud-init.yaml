@@ -359,20 +359,30 @@ write_files:
       # /etc/profile.d/10-claude.sh, sourced by this login shell) already points
       # at /data/claude-config, so credentials/settings/session history persist
       # across rebuilds.
+      # GUARDED (WARN, not hard-fail): unlike opencode/Go/Java above, this hits a
+      # separate CDN (claude.ai -> downloads.claude.ai) that can have transient
+      # failures independent of the rest of the toolchain. Because this runs
+      # inside `sudo -iu dev bash <<DEVEOF ... DEVEOF`, an unguarded failure here
+      # trips `set -e` and aborts that ENTIRE heredoc — skipping herdr,
+      # code-server, dotfiles, and the migrate_or_link PATH exports below it —
+      # and since the outer /opt/provision.sh also runs under `set -e`, the
+      # abort propagates up and skips writing /etc/profile.d/00-dev-toolchains.sh
+      # too, which is what puts opencode/claude/herdr on PATH at all. One failed
+      # download must not be able to take down the rest of provisioning.
       CLAUDE_CODE_VERSION="$(cat /data/claude-config/CLAUDE_CODE_VERSION 2>/dev/null || echo stable)"
-      curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+      curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION" || echo "WARN: Claude Code install failed (network/installer issue) — retry manually with: curl -fsSL https://claude.ai/install.sh | bash -s stable"
 
       # herdr (terminal workspace manager for AI agents) — single static
       # binary to ~/.local/bin/herdr, no root. State/config lives ENTIRELY
       # under ~/.config/herdr (sessions, sockets, session.json persistence).
-      command -v herdr >/dev/null 2>&1 || curl -fsSL https://herdr.dev/install.sh | sh
+      command -v herdr >/dev/null 2>&1 || curl -fsSL https://herdr.dev/install.sh | sh || echo "WARN: herdr install failed — retry manually with: curl -fsSL https://herdr.dev/install.sh | sh"
 
       # code-server (VS Code in the browser) — ON-DEMAND only.
       # Installed system-wide (/usr/bin/code-server). A systemd --user unit is
       # created below but DELIBERATELY NOT enabled at boot: it must be started
       # manually (`systemctl --user start code-server`) so it consumes no RAM
       # by default. Strong random password on first install only (idempotent).
-      command -v code-server >/dev/null 2>&1 || curl -fsSL https://code-server.dev/install.sh | sh
+      command -v code-server >/dev/null 2>&1 || curl -fsSL https://code-server.dev/install.sh | sh || echo "WARN: code-server install failed — retry manually with: curl -fsSL https://code-server.dev/install.sh | sh"
       # Password-preservation guard across rebuilds: if the persistent /data copy
       # already has a config.yaml (with its password), that wins — do NOT generate
       # a fresh random password. Only generate when NEITHER the home config NOR the
