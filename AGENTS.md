@@ -69,15 +69,17 @@ Provisioned via Terraform + cloud-init. Controlled from a tablet via GitHub Acti
 rebuild. The **OS disk is EPHEMERAL** and is wiped on every rebuild.
 
 **Tool binaries live on the OS disk on purpose and self-reinstall each rebuild**
-(opencode, herdr, code-server, nvim, node/nvm, uv, ripgrep, fzf, lazygit, etc.).
+(opencode, Claude Code, herdr, code-server, nvim, node/nvm, uv, ripgrep, fzf, lazygit, etc.).
 Only these are version-pinned in `cloud-init.yaml`: **Go 1.23.4**, **Java 21.0.5-tem**,
-**nvm v0.40.1**. Everything else tracks latest.
+**nvm v0.40.1**, **opencode** (exact version), **Claude Code** (release channel, default
+`stable`). Everything else tracks latest.
 
 ### What persists (on `/data`, symlinked from `$HOME`)
 
 | Item | Path |
 |------|------|
 | gh auth token | `/data/gh-config` (via `GH_CONFIG_DIR`) |
+| Claude Code config/credentials/sessions | `/data/claude-config` (via `CLAUDE_CONFIG_DIR`) |
 | GitHub SSH key | `/data/ssh/id_ed25519_github` |
 | herdr config | `~/.config/herdr` → `/data/herdr-config` |
 | code-server config | `~/.config/code-server` → `/data/code-server/config` |

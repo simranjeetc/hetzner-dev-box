@@ -25,6 +25,8 @@ TF state → HCP Terraform. `gh` token + GitHub SSH key → `/data` volume. Dotf
 
 ---
 
+## Operating from a tablet (runbook stub)
+
 ## What you get on the box
 - Ubuntu 24.04, non-root `dev` user, hardened SSH, ufw + fail2ban
 - Java 21 (SDKMAN) + Maven + Gradle
@@ -33,6 +35,7 @@ TF state → HCP Terraform. `gh` token + GitHub SSH key → `/data` volume. Dotf
 - Go 1.23
 - Docker + compose
 - opencode
+- Claude Code
 
 ## Cost
 - **cpx32** (4vCPU/8GB): **€0.093/hr**, **€58/mo cap** running 24/7
