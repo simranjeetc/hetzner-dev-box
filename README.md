@@ -33,6 +33,7 @@ TF state → HCP Terraform. `gh` token + GitHub SSH key → `/data` volume. Dotf
 - Go 1.23
 - Docker + compose
 - opencode
+- Claude Code
 
 ## Cost
 - **cpx32** (4vCPU/8GB): **€0.093/hr**, **€58/mo cap** running 24/7

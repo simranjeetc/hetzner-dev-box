@@ -1,6 +1,6 @@
 #cloud-config
 # Personal Cloud Dev Box — first-boot provisioning
-# Installs: base tools, Java, Node, Python, Go, Docker, opencode
+# Installs: base tools, Java, Node, Python, Go, Docker, opencode, Claude Code
 # Creates non-root user 'dev', hardens SSH, enables firewall.
 
 users:
@@ -347,6 +347,21 @@ write_files:
        # $VERSION env); the flag is unambiguous, so we use it.
        curl -fsSL https://opencode.ai/install | bash -s -- --version "$OPENCODE_VERSION"
 
+      # Claude Code CLI (Anthropic's coding agent). Channel/version is read from
+      # the persistent /data version file (mirrors the opencode pattern above) so
+      # rebuilds are deterministic — defaults to the "stable" release channel
+      # (not "latest") to avoid picking up a same-day regression on every
+      # rebuild. Bump/pin explicitly by editing
+      # /data/claude-config/CLAUDE_CODE_VERSION (accepts "stable", "latest", or
+      # an exact version like "2.1.89") — see RECOVERY.md. Native installer
+      # (no Node.js dependency); binary lands in ~/.local/bin, already on PATH
+      # via /etc/profile.d/00-dev-toolchains.sh below. CLAUDE_CONFIG_DIR (set by
+      # /etc/profile.d/10-claude.sh, sourced by this login shell) already points
+      # at /data/claude-config, so credentials/settings/session history persist
+      # across rebuilds.
+      CLAUDE_CODE_VERSION="$(cat /data/claude-config/CLAUDE_CODE_VERSION 2>/dev/null || echo stable)"
+      curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+
       # herdr (terminal workspace manager for AI agents) — single static
       # binary to ~/.local/bin/herdr, no root. State/config lives ENTIRELY
       # under ~/.config/herdr (sessions, sockets, session.json persistence).
@@ -477,6 +492,13 @@ write_files:
       # or symlinked it above).
       mkdir -p /data/opencode-config
       [ -f /data/opencode-config/OPENCODE_VERSION ] || echo "1.18.6" > /data/opencode-config/OPENCODE_VERSION
+      # Seed the Claude Code channel/version pin on /data (idempotent; same
+      # rationale as the opencode pin directly above). /data/claude-config
+      # already exists (created by the root section earlier in this script) and
+      # is where $CLAUDE_CONFIG_DIR already points, so no migrate_or_link is
+      # needed here — Claude Code writes its own config/credentials/session
+      # history straight into it.
+      [ -f /data/claude-config/CLAUDE_CODE_VERSION ] || echo "stable" > /data/claude-config/CLAUDE_CODE_VERSION
       chmod 700 /data/herdr-config
       chmod 600 /data/code-server/config/config.yaml 2>/dev/null || true
       for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
