@@ -110,8 +110,13 @@ persistent config on `/data`.
    ```bash
    VERSION=<Y> curl -fsSL https://opencode.ai/install | bash
    ```
-3. Smoke-test: `opencode --version`; open a session; confirm skills load and the
-   `handoff-on-context` plugin loads without error.
+ 3. Smoke-test: `opencode --version`; open a session; confirm skills load and the
+   `handoff-on-context` plugin loads without error. (2026-08-05: plugin entry now
+   exports ONLY the default factory — helpers moved to `lib.js` because OpenCode
+   invokes every function export as a factory — and the old-pane confirm retries
+   `herdr agent wait` through the `agent_not_found` registration race. The plugin
+   clone lives at `/data/codebase/opencode-handoff-on-context` when present;
+   cloud-init re-asserts the symlink post-migrate on every rebuild.)
 4. **ONLY THEN** bump the pin so rebuilds match:
    ```bash
    echo "<Y>" > /data/opencode-config/OPENCODE_VERSION

@@ -477,6 +477,28 @@ write_files:
       # (installed via curl opencode.ai/install above) stays ephemeral/self-
       # updating on the OS disk — only the CONFIG needs to live on /data.
       migrate_or_link "$HOME/.config/opencode"         "/data/opencode-config"
+      # Re-assert the handoff-on-context plugin AFTER the config migrate. Why:
+      # on a rebuild with an existing /data volume, migrate_or_link keeps the
+      # /data config (setup.sh's fresh tree is bak'd), so a plugin symlink
+      # pointing at the EPHEMERAL $HOME/codebase clone would dangle — and a
+      # stale symlink would also miss fixes pushed to the plugin repo. Pin the
+      # symlink to the persistent clone under /data/codebase (survives
+      # destroy), cloning/pulling it here so this works even if setup.sh's
+      # handoff block was skipped or failed. ~/.config/opencode is now a
+      # symlink to /data/opencode-config, so linking under /data covers both.
+      HANDOFF_REPO="/data/codebase/opencode-handoff-on-context"
+      if [ ! -f "$HANDOFF_REPO/index.js" ]; then
+        mkdir -p /data/codebase
+        git clone git@github.com:simranjeetc/opencode-handoff-on-context.git "$HANDOFF_REPO" \
+          || HANDOFF_REPO="$HOME/codebase/simranjeetc/opencode-handoff-on-context"
+      fi
+      if [ -d "$HANDOFF_REPO/.git" ]; then
+        git -C "$HANDOFF_REPO" pull --ff-only || true
+      fi
+      if [ -f "$HANDOFF_REPO/index.js" ]; then
+        mkdir -p /data/opencode-config/plugins
+        ln -sfn "$HANDOFF_REPO/index.js" /data/opencode-config/plugins/handoff-on-context.js
+      fi
       # opencode AUTH + local state persistence. Unlike ~/.config/opencode (settings),
       # auth.json (provider credentials / opencode-go login), opencode.db (chat
       # history), mcp-auth.json, and snapshots live under ~/.local/share/opencode.
