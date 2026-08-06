@@ -91,6 +91,9 @@ All control is via **GitHub → Actions tab**.
   ```bash
   bash ~/dotfiles/setup.sh
   ```
+  (this also reseeds `/data/claude-config`'s `CLAUDE.md`/`agents/`/`scripts/` —
+  relevant if `/data` was freshly created rather than restored from an
+  existing volume.)
 
 ### GitHub secret expired / rotated
 - GitHub → **Settings → Secrets and variables → Actions**.

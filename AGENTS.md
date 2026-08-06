@@ -79,7 +79,7 @@ Only these are version-pinned in `cloud-init.yaml`: **Go 1.23.4**, **Java 21.0.5
 | Item | Path |
 |------|------|
 | gh auth token | `/data/gh-config` (via `GH_CONFIG_DIR`) |
-| Claude Code config/credentials/sessions | `/data/claude-config` (via `CLAUDE_CONFIG_DIR`) |
+| Claude Code config/credentials/sessions | `/data/claude-config` (via `CLAUDE_CONFIG_DIR`) — `CLAUDE.md`/`agents/`/`scripts/` are dotfiles-sourced (version history in `simranjeetc/dotfiles`, under `claude/`); edit there, not the persisted copy only |
 | GitHub SSH key | `/data/ssh/id_ed25519_github` |
 | herdr config | `~/.config/herdr` → `/data/herdr-config` |
 | code-server config | `~/.config/code-server` → `/data/code-server/config` |
