@@ -34,6 +34,11 @@ Provisioned via Terraform + cloud-init. Controlled from a tablet via GitHub Acti
 - **State backend:** HCP Terraform (Terraform Cloud) free tier. State never lives in this repo.
 - **Control plane:** GitHub Actions `dev-up` / `dev-down` workflows (`workflow_dispatch`),
   triggered from the tablet.
+- **Tailnet access:** Tailscale (`--ssh`) joins the box to a private WireGuard
+  overlay; node identity persists on `/data` so rebuilds rejoin silently. The
+  opencode web UI is served at `https://personal-dev.<tailnet>.ts.net/` via
+  `tailscale serve` (proxying the always-on `opencode-serve` systemd --user
+  unit, bound to 127.0.0.1). Phone: Tailscale app + Safari. No public exposure.
 - **Persistent storage:** Hetzner volume `personal-dev-data` mounted at `/data`.
   Holds repos, uncommitted work, dotfiles, gh token, GitHub SSH key, herdr state.
   Toolchains stay on the ephemeral server SSD.
@@ -79,6 +84,7 @@ Only these are version-pinned in `cloud-init.yaml`: **Go 1.23.4**, **Java 21.0.5
 | Item | Path |
 |------|------|
 | gh auth token | `/data/gh-config` (via `GH_CONFIG_DIR`) |
+| Tailscale node identity (stable 100.x IP, `tailscale serve` config) | `/data/tailscale-state` — box rejoins the tailnet on every rebuild, no re-auth |
 | Claude Code config/credentials/sessions | `/data/claude-config` (via `CLAUDE_CONFIG_DIR`) — `CLAUDE.md`/`agents/`/`scripts/` are dotfiles-sourced (version history in `simranjeetc/dotfiles`, under `claude/`); edit there, not the persisted copy only |
 | GitHub SSH key | `/data/ssh/id_ed25519_github` |
 | herdr config | `~/.config/herdr` → `/data/herdr-config` |

@@ -82,6 +82,15 @@ resource "hcloud_firewall" "dev_fw" {
     port       = "8443"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
+
+  # Tailscale WireGuard (UDP 41641) — inbound for direct tailnet connections
+  # (lower latency than DERP relay). Optional: relay fallback works if removed.
+  rule {
+    direction  = "in"
+    protocol   = "udp"
+    port       = "41641"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
 }
 
 resource "hcloud_server" "dev" {

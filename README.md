@@ -34,6 +34,21 @@ TF state → HCP Terraform. `gh` token + GitHub SSH key → `/data` volume. Dotf
 - Docker + compose
 - opencode
 - Claude Code
+- Tailscale (private tailnet — see Mobile access below)
+
+## Mobile access (phone/tablet, via Tailscale)
+The box joins a private WireGuard tailnet; its identity lives on `/data`, so it
+rejoins automatically after every `dev-down`/`dev-up` (one-time auth only, done
+at first join).
+
+| Access | How |
+|--------|-----|
+| **opencode web UI** | Install **Tailscale** app → sign in (same account as the box) → enable VPN → open `https://personal-dev.<tailnet>.ts.net/` in Safari |
+| **SSH from phone** | Any SSH client → `dev@personal-dev` (Tailscale SSH — no key needed), or `ssh dev@<tailscale-ip>` |
+
+The web UI runs via the always-on `opencode-serve` systemd --user unit (bound
+to `127.0.0.1:4096`), proxied to tailnet-HTTPS by `tailscale serve`. Nothing is
+exposed on the public internet.
 
 ## Cost
 - **cpx32** (4vCPU/8GB): **€0.093/hr**, **€58/mo cap** running 24/7
@@ -41,6 +56,24 @@ TF state → HCP Terraform. `gh` token + GitHub SSH key → `/data` volume. Dotf
 - Snapshot billing: **~€0.0119/GB/month** → a few-GB image ≈ cents/month
 
 > ⚠️ A merely stopped (powered-off) server STILL BILLS. Only **destroying** the resource stops compute charges.
+
+## Machine types — switch anytime
+The only switch to flip is `server_type` in `terraform/terraform.tfvars`. Changing it =
+`dev-down` → edit → `dev-up`. `/data`, the reserved IP, and the Tailscale identity all
+persist through the rebuild, so switching costs ~10 min of provisioning and nothing else.
+Note: a rebuild reprices the server at Hetzner's current rates.
+
+| Type | vCPU/RAM | ~€/mo (sin) | Use for |
+|------|----------|-------------|---------|
+| `cx23` / `cax11` | 2/4GB | ~€7–8 | Python/Node dev — JVM/Gradle builds are painful on 4GB |
+| `cx33` / `cax21` | 4/8GB | ~€12–14 | + Java builds, parallel toolchains |
+| `cpx32` **(current)** | 4/8GB | ~€55–58 | AMD + 160GB NVMe headroom |
+| `cpx42` | 8/16GB | ~€95+ | Heavy builds — temporary upsize, then switch back |
+
+ARM caveat (`cax*`): Java/Python/Node are fine on ARM; check that herdr/opencode and any
+prebuilt binaries ship ARM64 before switching. Intel CX line availability in `sin` varies —
+if `cx23`/`cx33` is sold out, `cax11`/`cax21` is the fallback.
+A 2GB swapfile is provisioned by cloud-init on every rebuild (cushion for the 4GB tiers).
 
 ---
 

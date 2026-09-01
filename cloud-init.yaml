@@ -116,6 +116,19 @@ write_files:
         chown dev:dev /data
       fi
 
+      # --- 2GB swapfile (cushion for the 4GB machine tiers) ---
+      # python/node dev fits in 4GB, but frontend bundles or parallel tooling
+      # can spike past RAM; swap absorbs it instead of OOM-killing sessions.
+      # Harmless on the 8GB tiers. Ephemeral (OS disk) — recreated on every
+      # rebuild, idempotent within a boot.
+      if ! swapon --show | grep -q '/swapfile'; then
+        fallocate -l 2G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile >/dev/null
+        swapon /swapfile
+      fi
+      grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
       # --- Persistent SSH HOST keys on /data (stable server identity) ---
       # cloud-init generates fresh host keys on every NEW instance (by design,
       # so images don't share keys across clones). Since dev-down/dev-up fully
@@ -141,6 +154,58 @@ write_files:
       chmod 600 /etc/ssh/ssh_host_*_key
       chmod 644 /etc/ssh/ssh_host_*_key.pub
       systemctl restart ssh
+
+      # --- Tailscale (private tailnet for phone/tablet access) ---
+      # Gives the box a stable private address (100.x.y.z + MagicDNS name) on a
+      # zero-config WireGuard overlay, reachable ONLY from authenticated
+      # devices in the tailnet — never exposed on the public internet. Served
+      # over the tailnet: Tailscale SSH (drop-in ssh access from any tailnet
+      # device, incl. phone SSH clients) and the opencode web UI (the
+      # `tailscale serve` HTTPS proxy fronting the opencode-serve systemd
+      # --user unit defined in the dev section below).
+      # Identity persistence mirrors the SSH host-key block above: node state
+      # lives on /data, so after the ONE-TIME first auth the box rejoins every
+      # rebuild as the SAME node (same name + same 100.x IP), no re-auth.
+      # NO secrets in this repo: the auth flow is interactive-once (URL), the
+      # resulting node key is just machine identity, stored on /data.
+      if ! command -v tailscale >/dev/null 2>&1; then
+        curl -fsSL https://tailscale.com/install.sh | sh
+      fi
+      systemctl stop tailscaled
+      mkdir -p /data/tailscale-state
+      chmod 700 /data/tailscale-state
+      if [ -f /data/tailscale-state/tailscaled.state ]; then
+        # Rebuild: restore the persisted node identity over the fresh state
+        # the package install just generated, then rejoin silently (with
+        # restored node credentials this needs no auth) and refresh /data.
+        rm -rf /var/lib/tailscale/*
+        cp -a /data/tailscale-state/. /var/lib/tailscale/
+        systemctl start tailscaled
+        tailscale up --ssh --hostname=personal-dev || true
+        # tailscale serve config lives in tailscaled.state, so the opencode
+        # web-UI proxy survives rebuilds automatically; re-assert it anyway to
+        # self-heal if it was ever missing (idempotent, no-op when set).
+        tailscale serve --bg http://127.0.0.1:4096 || true
+        cp -a /var/lib/tailscale/. /data/tailscale-state/
+      else
+        # First boot ever (or /data lost): authenticate ONCE interactively.
+        # The login URL is written to /var/log/tailscale-auth.log; tailscaled
+        # completes the login whenever that URL is visited in a browser (the
+        # CLI dying does not cancel a pending login). Once joined: publish the
+        # opencode web UI and persist the state so future rebuilds never auth.
+        systemctl start tailscaled
+        nohup sh -c '
+          tailscale up --ssh --hostname=personal-dev
+          for i in $(seq 1 90); do
+            sleep 10
+            if tailscale ip >/dev/null 2>&1; then
+              tailscale serve --bg http://127.0.0.1:4096 || true
+              cp -a /var/lib/tailscale/. /data/tailscale-state/
+              break
+            fi
+          done
+        ' >/var/log/tailscale-auth.log 2>&1 &
+      fi
 
       # --- CRITICAL: ensure dev owns its own home (cloud-init write_files can
       # create /home/dev as root before the users module; fix ownership first) ---
@@ -407,6 +472,36 @@ write_files:
       CSEOF
       systemctl --user daemon-reload 2>/dev/null || true
 
+      # opencode serve (web UI/API server) — ALWAYS ON at boot, for mobile
+      # access over the tailnet. The iPhone reaches it at
+      # https://personal-dev.<tailnet>.ts.net/ via the `tailscale serve`
+      # HTTPS proxy (see the tailscale block in the root section). Unlike
+      # code-server above it IS enabled: it is the persistent access path and
+      # is lightweight. Binds 127.0.0.1 ONLY — never on the public internet;
+      # tailnet devices get it exclusively through the tailscale serve proxy.
+      # Sessions/auth live in ~/.local/share/opencode (-> /data/opencode-share,
+      # migrated below), so web-UI and TUI sessions share one persistent store.
+      cat > "$HOME/.config/systemd/user/opencode-serve.service" <<'OSEOF'
+      [Unit]
+      Description=opencode serve (web UI; tailnet-only via tailscale serve)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=exec
+      ExecStart=%h/.opencode/bin/opencode serve --hostname 127.0.0.1 --port 4096
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=default.target
+      OSEOF
+      systemctl --user daemon-reload 2>/dev/null || true
+      systemctl --user enable opencode-serve 2>/dev/null || true
+      # Best-effort start for THIS boot; linger (enabled near the end of this
+      # script) + enable above guarantee auto-start on every subsequent boot.
+      systemctl --user start opencode-serve 2>/dev/null || true
+
       # --- Personal dotfiles (simranjeetc/dotfiles) — copy-based setup.sh ---
       # Applies zsh/nvim/oh-my-zsh-custom config. Requires the github.com SSH
       # config + known_hosts already written by the root section above (so the
@@ -563,6 +658,14 @@ runcmd:
   - systemctl restart ssh
   - ufw allow OpenSSH
   - ufw allow 8443/tcp
+  # Tailscale: permit everything arriving on the tailscale interface (Tailscale
+  # SSH, the tailscale-serve HTTPS proxy, plain 100.x traffic). The rule is
+  # registered before the interface exists — ufw applies it once tailscale0
+  # appears (provision.sh brings it up).
+  - ufw allow in on tailscale0
+  # WireGuard direct connections (better latency than DERP relay); the tailnet
+  # still functions without it via outbound-only DERP.
+  - ufw allow 41641/udp
   - ufw --force enable
   - systemctl enable --now fail2ban
   - bash /opt/provision.sh 2>&1 | tee /var/log/provision.log
