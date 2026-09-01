@@ -3,11 +3,11 @@
 # Required by the dev-up/dev-down workflows (terraform auto-loads this file).
 
 server_name = "personal-dev"
-server_type = "cpx32" # 4vCPU/8GB AMD (~€55-58/mo sin). SWITCHABLE — see README "Machine types":
-                     # cx23/cax11 = 2/4GB py+node (~€7-8) | cx33/cax21 = 4/8GB +Java (~€12-14) |
-                     # cpx32 = current | cpx42 = 8/16GB heavy builds (~€95+).
+server_type = "cpx32" # 4vCPU/8GB AMD, ~€49/mo cap in sin. SWITCHABLE — sin offers CPX/CCX lines only:
+                     # cpx22 = 2/4GB ~€26 (cheapest dev tier) | cpx32 = current | cpx42 = 8/16GB ~€93.
+                     # Budget cx/cax types are EU-only (region move = data migration + latency; see README).
                      # Switch = edit here + dev-down/dev-up (/data, IP, tailnet identity persist).
-location    = "sin"   # Singapore (closest to Bengaluru, ~50ms). cpx42=16GB heavy builds.
+location    = "sin"   # Singapore (closest to Bengaluru, ~50ms).
 
 # Each device = its own keypair. PUBLIC keys only. Private keys never leave their device.
 # Tablet key to be added later (the one pasted in chat was a PRIVATE key = compromised, do NOT use).

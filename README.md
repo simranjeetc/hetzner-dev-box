@@ -51,7 +51,7 @@ to `127.0.0.1:4096`), proxied to tailnet-HTTPS by `tailscale serve`. Nothing is
 exposed on the public internet.
 
 ## Cost
-- **cpx32** (4vCPU/8GB): **€0.093/hr**, **€58/mo cap** running 24/7
+- **cpx32** (4vCPU/8GB): **€0.093/hr**, **€49/mo cap** running 24/7 (official Jun-2026 cap; volume €3.22 + IPv4 €0.60 on top → **~€53/mo all-in**)
 - 10-15 day gap destroyed-when-idle: **~€8-10** (only active-use hours)
 - Snapshot billing: **~€0.0119/GB/month** → a few-GB image ≈ cents/month
 
@@ -65,15 +65,18 @@ Note: a rebuild reprices the server at Hetzner's current rates.
 
 | Type | vCPU/RAM | ~€/mo (sin) | Use for |
 |------|----------|-------------|---------|
-| `cx23` / `cax11` | 2/4GB | ~€7–8 | Python/Node dev — JVM/Gradle builds are painful on 4GB |
-| `cx33` / `cax21` | 4/8GB | ~€12–14 | + Java builds, parallel toolchains |
-| `cpx32` **(current)** | 4/8GB | ~€55–58 | AMD + 160GB NVMe headroom |
-| `cpx42` | 8/16GB | ~€95+ | Heavy builds — temporary upsize, then switch back |
+| `cpx12` | 1/2GB | ~€15 | Too small for dev — listed for completeness |
+| `cpx22` | 2/4GB | ~€26 | Cheapest real dev tier in sin; fine for opencode + Python/Node |
+| `cpx32` **(current)** | 4/8GB | ~€49 | AMD + 160GB NVMe headroom |
+| `cpx42` | 8/16GB | ~€93 | Heavy builds — temporary upsize, then switch back |
 
-ARM caveat (`cax*`): Java/Python/Node are fine on ARM; check that herdr/opencode and any
-prebuilt binaries ship ARM64 before switching. Intel CX line availability in `sin` varies —
-if `cx23`/`cx33` is sold out, `cax11`/`cax21` is the fallback.
-A 2GB swapfile is provisioned by cloud-init on every rebuild (cushion for the 4GB tiers).
+**Singapore only offers the CPX (shared AMD) and CCX (dedicated) lines.** The budget
+CX (Intel) and CAX (ARM) types — e.g. `cx33` 4/8GB at ~€8.49/mo — exist only in EU
+locations (fsn1/nbg1/hel1). A region move is a bigger change than a type switch:
+the `/data` volume and reserved IP cannot migrate cross-region (data must be
+rsynced, ~2GB), and EU adds ~90ms latency vs sin (~150ms vs ~60ms from India).
+CCX13 (2 dedicated vCPU/8GB, ~€54/mo sin) exists but is not cheaper than cpx32.
+A 2GB swapfile is provisioned by cloud-init on every rebuild (cushion for the 4GB tier).
 
 ---
 
